@@ -3,7 +3,6 @@ import { NewsCollector } from './news/collector.js';
 import { CalendarEvents } from './calendar/events.js';
 import { Admin } from './admin/admin.js';
 import { Database } from './utils/database.js';
-import { readFileSync } from 'fs';
 
 export default {
   async fetch(request, env, ctx) {
@@ -13,7 +12,7 @@ export default {
     try {
       // Мини-приложение
       if (path === '/mini-app' || path === '/') {
-        const html = await getMiniApp();
+        const html = getMiniAppHTML();
         return new Response(html, {
           headers: { 'Content-Type': 'text/html' }
         });
@@ -22,7 +21,7 @@ export default {
       // API для мини-приложения
       if (path === '/api/news') {
         const db = new Database(env);
-        const news = await db.getLatestNews();
+        const news = await db.getLatestNews(20);
         return new Response(JSON.stringify(news), {
           headers: { 'Content-Type': 'application/json' }
         });
@@ -37,11 +36,12 @@ export default {
       }
       
       if (path === '/api/altcoins') {
-        // Заглушка для альткоинов
         const data = [
-          { id: 1, name: 'Ethereum', price: '$3,450', change: '+2.3%' },
-          { id: 2, name: 'Solana', price: '$178', change: '+5.1%' },
-          { id: 3, name: 'Cardano', price: '$0.45', change: '-0.8%' }
+          { id: 1, name: 'Ethereum (ETH)', price: '$3,450', change: '+2.3%', source: 'altcoins' },
+          { id: 2, name: 'Solana (SOL)', price: '$178', change: '+5.1%', source: 'altcoins' },
+          { id: 3, name: 'Cardano (ADA)', price: '$0.45', change: '-0.8%', source: 'altcoins' },
+          { id: 4, name: 'Polkadot (DOT)', price: '$6.80', change: '+1.2%', source: 'altcoins' },
+          { id: 5, name: 'Avalanche (AVAX)', price: '$35.20', change: '+3.7%', source: 'altcoins' }
         ];
         return new Response(JSON.stringify(data), {
           headers: { 'Content-Type': 'application/json' }
@@ -50,29 +50,35 @@ export default {
       
       if (path === '/api/exclusive') {
         const db = new Database(env);
-        const news = await db.getExclusiveNews();
-        return new Response(JSON.stringify(news), {
+        const news = await db.getLatestNews(10);
+        const exclusive = news.map(item => ({
+          ...item,
+          source: `⭐ ${item.source}`
+        }));
+        return new Response(JSON.stringify(exclusive), {
           headers: { 'Content-Type': 'application/json' }
         });
       }
       
-      // ... остальной код (админ, вебхук, хелс)
-      
+      // Админ панель
       if (path === '/admin' || path === '/admin/') {
         const admin = new Admin(env);
         return admin.handle(request);
       }
       
+      // Webhook для Telegram
       if (path === '/webhook') {
         const bot = new Bot(env);
         return bot.handleWebhook(request);
       }
       
+      // Health check
       if (path === '/health') {
         return new Response(JSON.stringify({
           status: 'ok',
           timestamp: new Date().toISOString(),
-          version: '1.0.0'
+          version: '1.0.0',
+          environment: env.WORKER_URL || 'local'
         }), {
           headers: { 'Content-Type': 'application/json' }
         });
@@ -85,26 +91,77 @@ export default {
       
     } catch (error) {
       console.error('Error in fetch:', error);
-      return new Response('Internal Server Error', { status: 500 });
+      return new Response(`Internal Server Error: ${error.message}`, { 
+        status: 500,
+        headers: { 'Content-Type': 'text/plain' }
+      });
     }
   },
   
   async scheduled(event, env, ctx) {
-    // ... ваш существующий код
+    console.log('🔄 Starting scheduled task...');
+    
+    const collector = new NewsCollector(env);
+    const calendar = new CalendarEvents(env);
+    const bot = new Bot(env);
+    const db = new Database(env);
+    
+    try {
+      await db.setLastUpdate(new Date().toISOString());
+      
+      const news = await collector.collectAll();
+      if (news && news.length > 0) {
+        console.log(`📰 Collected ${news.length} news items`);
+        await bot.sendNewsToChannel(news);
+      } else {
+        console.log('📭 No new news found');
+      }
+      
+      const lastCalendarUpdate = await db.getLastCalendarUpdate();
+      const shouldUpdateCalendar = !lastCalendarUpdate || 
+        (Date.now() - new Date(lastCalendarUpdate).getTime() > 24 * 60 * 60 * 1000);
+      
+      if (shouldUpdateCalendar) {
+        console.log('📅 Updating calendar...');
+        await calendar.updateEvents();
+        await db.setLastCalendarUpdate(new Date().toISOString());
+        console.log('✅ Calendar updated');
+      }
+      
+      const lastCleanup = await db.getLastCleanup();
+      const shouldCleanup = !lastCleanup || 
+        (Date.now() - new Date(lastCleanup).getTime() > 7 * 24 * 60 * 60 * 1000);
+      
+      if (shouldCleanup) {
+        console.log('🧹 Cleaning old news...');
+        await db.cleanOldNews(7);
+        await db.setLastCleanup(new Date().toISOString());
+        console.log('✅ Cleanup completed');
+      }
+      
+      console.log('✅ Scheduled task completed successfully');
+      
+    } catch (error) {
+      console.error('❌ Scheduled task failed:', error);
+      try {
+        await bot.sendErrorMessage(error.message);
+      } catch (notifyError) {
+        console.error('Failed to send error notification:', notifyError);
+      }
+    }
   }
 };
 
-async function getMiniApp() {
-  // В реальном проекте читайте из файла
+// HTML мини-приложения
+function getMiniAppHTML() {
   return `<!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>COIN DIGEST</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        /* Весь CSS из miniapp.html выше */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -122,14 +179,20 @@ async function getMiniApp() {
             height: 44px;
             background: rgba(26, 26, 46, 0.8);
             backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 100;
         }
-        .header h1 { font-size: 17px; font-weight: 600; }
-        .header .status { position: absolute; right: 16px; font-size: 12px; color: #4ade80; }
+        .header h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.5px; }
+        .header .status {
+            position: absolute;
+            right: 16px;
+            font-size: 12px;
+            color: #4ade80;
+        }
         .tabs {
             position: fixed;
             bottom: 0;
@@ -138,6 +201,7 @@ async function getMiniApp() {
             height: 80px;
             background: rgba(26, 26, 46, 0.85);
             backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             border-top: 1px solid rgba(255, 255, 255, 0.1);
             display: flex;
             justify-content: space-around;
@@ -154,12 +218,14 @@ async function getMiniApp() {
             padding: 4px 12px;
             border-radius: 12px;
             min-width: 60px;
+            transition: all 0.3s;
         }
-        .tab-item .icon { font-size: 24px; }
+        .tab-item .icon { font-size: 24px; line-height: 1.2; }
         .tab-item .label {
             font-size: 10px;
             margin-top: 2px;
             color: rgba(255, 255, 255, 0.5);
+            transition: color 0.3s;
         }
         .tab-item.active .label { color: #4ade80; }
         .tab-item.active { background: rgba(74, 222, 128, 0.1); }
@@ -173,10 +239,13 @@ async function getMiniApp() {
         .card {
             background: rgba(255, 255, 255, 0.06);
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             border-radius: 16px;
             padding: 16px;
             margin-bottom: 12px;
             border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s;
+            cursor: pointer;
         }
         .card:active { transform: scale(0.98); }
         .card .source {
@@ -186,9 +255,26 @@ async function getMiniApp() {
             letter-spacing: 0.5px;
             margin-bottom: 6px;
         }
-        .card .title { font-size: 16px; font-weight: 600; line-height: 1.4; margin-bottom: 8px; }
-        .card .description { font-size: 14px; color: rgba(255, 255, 255, 0.7); line-height: 1.5; }
-        .card .time { font-size: 12px; color: rgba(255, 255, 255, 0.3); margin-top: 8px; }
+        .card .title {
+            font-size: 16px;
+            font-weight: 600;
+            line-height: 1.4;
+            margin-bottom: 8px;
+        }
+        .card .description {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .card .time {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.3);
+            margin-top: 8px;
+        }
         .event-item {
             display: flex;
             align-items: center;
@@ -196,12 +282,27 @@ async function getMiniApp() {
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
         .event-item:last-child { border-bottom: none; }
-        .event-date { min-width: 60px; text-align: center; margin-right: 16px; }
-        .event-date .day { font-size: 20px; font-weight: 700; color: #4ade80; }
-        .event-date .month { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; }
+        .event-date {
+            min-width: 60px;
+            text-align: center;
+            margin-right: 16px;
+        }
+        .event-date .day {
+            font-size: 20px;
+            font-weight: 700;
+            color: #4ade80;
+        }
+        .event-date .month {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+        }
         .event-info { flex: 1; }
         .event-info .name { font-size: 15px; font-weight: 500; }
-        .event-info .desc { font-size: 13px; color: rgba(255, 255, 255, 0.5); }
+        .event-info .desc {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.5);
+        }
         .event-badge {
             font-size: 10px;
             padding: 2px 10px;
@@ -210,9 +311,14 @@ async function getMiniApp() {
             color: #4ade80;
             margin-left: 8px;
         }
-        .loading { text-align: center; padding: 40px 0; color: rgba(255, 255, 255, 0.3); }
+        .loading {
+            text-align: center;
+            padding: 40px 0;
+            color: rgba(255, 255, 255, 0.3);
+        }
         .loading .spinner {
-            width: 30px; height: 30px;
+            width: 30px;
+            height: 30px;
             border: 3px solid rgba(255, 255, 255, 0.1);
             border-top: 3px solid #4ade80;
             border-radius: 50%;
@@ -220,7 +326,11 @@ async function getMiniApp() {
             margin: 0 auto 12px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .empty { text-align: center; padding: 40px 0; color: rgba(255, 255, 255, 0.3); }
+        .empty {
+            text-align: center;
+            padding: 40px 0;
+            color: rgba(255, 255, 255, 0.3);
+        }
         .empty .emoji { font-size: 48px; margin-bottom: 12px; }
         ::-webkit-scrollbar { width: 0; }
     </style>
@@ -252,7 +362,11 @@ async function getMiniApp() {
     </div>
     <script>
         let tg = window.Telegram?.WebApp;
-        if (tg) { tg.expand(); tg.setBackgroundColor('#1a1a2e'); tg.setHeaderColor('#1a1a2e'); }
+        if (tg) {
+            tg.expand();
+            tg.setBackgroundColor('#1a1a2e');
+            tg.setHeaderColor('#1a1a2e');
+        }
         
         const API_URL = 'https://newscroopto.nazar-bronnikov22.workers.dev/api';
         
@@ -261,8 +375,9 @@ async function getMiniApp() {
                 document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
                 this.classList.add('active');
-                document.getElementById('tab-' + this.dataset.tab).classList.add('active');
-                loadTabData(this.dataset.tab);
+                const tabId = this.dataset.tab;
+                document.getElementById('tab-' + tabId).classList.add('active');
+                loadTabData(tabId);
             });
         });
         
@@ -275,15 +390,15 @@ async function getMiniApp() {
                 else if (tab === 'calendar') data = await fetchData('/calendar');
                 else if (tab === 'exclusive') data = await fetchData('/exclusive');
                 renderData(tab, data, container);
-            } catch(e) {
+            } catch (error) {
                 container.innerHTML = '<div class="empty"><div class="emoji">😕</div><div>Ошибка загрузки</div></div>';
             }
         }
         
         async function fetchData(endpoint) {
-            const r = await fetch(API_URL + endpoint);
-            if (!r.ok) throw new Error('Error');
-            return r.json();
+            const response = await fetch(API_URL + endpoint);
+            if (!response.ok) throw new Error('Error');
+            return response.json();
         }
         
         function renderData(tab, data, container) {
@@ -308,7 +423,10 @@ async function getMiniApp() {
                             <div class="month">\${formatMonth(event.date)}</div>
                         </div>
                         <div class="event-info">
-                            <div class="name">\${event.name}\${event.importance === 'high' ? ' <span class="event-badge">🔥 Важно</span>' : ''}</div>
+                            <div class="name">
+                                \${event.name}
+                                \${event.importance === 'high' ? '<span class="event-badge">🔥 Важно</span>' : ''}
+                            </div>
                             <div class="desc">\${event.description || ''}</div>
                         </div>
                     </div>
@@ -316,9 +434,27 @@ async function getMiniApp() {
             }
         }
         
-        function formatTime(date) { if (!date) return ''; const d = new Date(date); return d.toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }
-        function formatDay(date) { if (!date) return ''; return String(new Date(date).getDate()).padStart(2,'0'); }
-        function formatMonth(date) { if (!date) return ''; const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек']; return months[new Date(date).getMonth()]; }
+        function formatTime(date) {
+            if (!date) return '';
+            const d = new Date(date);
+            return d.toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        
+        function formatDay(date) {
+            if (!date) return '';
+            return String(new Date(date).getDate()).padStart(2, '0');
+        }
+        
+        function formatMonth(date) {
+            if (!date) return '';
+            const months = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+            return months[new Date(date).getMonth()];
+        }
         
         loadTabData('news');
         document.getElementById('statusDot').textContent = '●';
