@@ -100,7 +100,9 @@ export class Translator {
     } catch (error) {
       console.error('LibreTranslate error:', error);
       try {
-        const response = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=${CONFIG.sourceLanguage}&tl=${CONFIG.defaultLanguage}&dt=t&q=${encodeURIComponent(text)}`);
+        const response = await fetch(
+          `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${CONFIG.sourceLanguage}&tl=${CONFIG.defaultLanguage}&dt=t&q=${encodeURIComponent(text)}`
+        );
         
         if (!response.ok) {
           throw new Error(`Google Translate API error: ${response.status}`);
