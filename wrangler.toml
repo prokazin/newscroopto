@@ -1,0 +1,17 @@
+name = "telegram-news-bot"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+BOT_TOKEN = "8422981212:AAFx0HvRRFZy-JlTno_NXzUzpm2rJ-KWrBY"
+CHANNEL_ID = "-1004345602790"
+ADMIN_PASSWORD = "secure_admin_password_2024"
+WORKER_URL = "telegram-news-bot.workers.dev"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[[kv_namespaces]]
+binding = "NEWS_DB"
+id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+preview_id = "p1q2r3s4-t5u6-7890-vwxy-zt1234567890"
