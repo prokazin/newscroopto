@@ -1,17 +1,17 @@
 name = "telegram-news-bot"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 BOT_TOKEN = "8422981212:AAFx0HvRRFZy-JlTno_NXzUzpm2rJ-KWrBY"
 CHANNEL_ID = "-1004345602790"
 ADMIN_PASSWORD = "secure_admin_password_2024"
-WORKER_URL = "telegram-news-bot.workers.dev"
+WORKER_URL = "newscroopto.nazar-bronnikov22.workers.dev"
 
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["*/15 * * * *", "0 9 * * *", "0 21 * * *"]
 
 [[kv_namespaces]]
 binding = "NEWS_DB"
 id = "f2c069e55c774b63bdc0a202c6915f80"
-preview_id = "p1q2r3s4-t5u6-7890-vwxy-zt1234567890"
