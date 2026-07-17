@@ -1,0 +1,21 @@
+{
+  "name": "telegram-news-bot",
+  "version": "1.0.0",
+  "description": "Telegram news bot for crypto updates",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler preview",
+    "kv:create": "wrangler kv:namespace create NEWS_DB",
+    "kv:create:preview": "wrangler kv:namespace create NEWS_DB --preview"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
