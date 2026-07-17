@@ -13,5 +13,5 @@ crons = ["*/15 * * * *"]
 
 [[kv_namespaces]]
 binding = "NEWS_DB"
-id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+id = "f2c069e55c774b63bdc0a202c6915f80"
 preview_id = "p1q2r3s4-t5u6-7890-vwxy-zt1234567890"
